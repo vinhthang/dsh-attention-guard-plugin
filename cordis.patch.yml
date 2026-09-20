@@ -1,0 +1,8 @@
+- insert:
+    - id: attention-guard
+      name: 'dsh-plugin-attention-guard'
+      config:
+        enabled: true
+        model: 'deepseek-flash'
+        rtkBinary: 'rtk'
+        excludeCommands: []
