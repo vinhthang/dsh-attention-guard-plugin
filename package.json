@@ -20,12 +20,12 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/schemastery": "^3.18.2",
-    "@deepseek-ai/dsh-shell": "^0.1.5-rc.2"
+    "@deepseek-ai/dsh-shell": "^0.1.5-rc.2 || ^0.2.0-rc.2"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/schemastery": "^3.18.2",
-    "@deepseek-ai/dsh-shell": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-shell": "^0.1.5-rc.2 || ^0.2.0-rc.2",
     "@types/node": "^20.17.0",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"

@@ -4,7 +4,7 @@ import { Config } from './schema.js';
 import { checkRtkAvailable, rewriteCommand } from './rtk.js';
 
 export const name = 'dsh-plugin-attention-guard';
-export const inject = ['shell'] as const;
+export const inject = ['shell', 'sandboxPolicy'] as const;
 export { Config };
 export type { Config as ConfigType } from './schema.js';
 
