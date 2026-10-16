@@ -65,9 +65,20 @@ export function apply(ctx: Context, config: Config): void {
           }
 
           if (config.enableMetrics) {
+            const stdoutBytes = res.stdout?.bytes || 0;
+            const stderrBytes = res.stderr?.bytes || 0;
+            const totalBytes = stdoutBytes + stderrBytes;
+            const estimatedTokens = Math.floor(totalBytes / 4);
+
             pushMetricAsync('SHELL_EXEC_RESULT', {
+              platform: 'dsh',
               command: spec.command,
               exitCode: res.exitCode,
+              timedOut: res.timedOut,
+              signal: res.signal,
+              bytes: totalBytes,
+              raw_tokens_est: estimatedTokens,
+              filtered_tokens_est: estimatedTokens,
               state: cb.state,
               streak: cb.streak,
             });

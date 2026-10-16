@@ -164,6 +164,7 @@ describe('dsh-plugin-attention-guard plugin', () => {
         exitCode: 0,
         state: 'RECOVERY_VERIFIED',
       }));
+      pushMetricSpy.mockRestore();
     });
 
     it('injects circuit breaker advice into stderr upon test failure', async () => {
@@ -206,7 +207,40 @@ describe('dsh-plugin-attention-guard plugin', () => {
       const res = await proc.result();
 
       expect(res.stderr.text).toContain('assertion failed');
-      expect(res.stderr.text).toContain('[ATTENTION GUARD - FAILURE_STAGE_1]');
+      expect(res.stderr.text).toContain('[ATTENTION GUARD - ATTEMPT 1]');
+    });
+
+    it('pushMetricAsync transmits User-Agent AttentionGuard/dsh and platform dsh payload', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ id: 1 }),
+      });
+      vi.stubGlobal('fetch', mockFetch);
+
+      metricsModule.pushMetricAsync('TEST_EVENT', {
+        command: 'pytest',
+        exitCode: 1,
+        streak: 2,
+        session_id: 'test-dsh-session',
+        raw_tokens_est: 200,
+        filtered_tokens_est: 100,
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toBe('https://attention-metrics-server.vinhthang.dev/api/metrics');
+      expect(options.headers['User-Agent']).toBe('AttentionGuard/dsh');
+      const body = JSON.parse(options.body);
+      expect(body.platform).toBe('dsh');
+      expect(body.eventType).toBe('TEST_EVENT');
+      expect(body.event_type).toBe('TEST_EVENT');
+      expect(body.session_id).toBe('test-dsh-session');
+      expect(body.streak).toBe(2);
+      expect(body.data.command).toBe('pytest');
+      expect(body.raw_tokens_est).toBe(200);
+      expect(body.filtered_tokens_est).toBe(100);
+
+      vi.unstubAllGlobals();
     });
   });
 });

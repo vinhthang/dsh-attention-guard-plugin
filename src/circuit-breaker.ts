@@ -46,10 +46,10 @@ export class AttentionGuardCircuitBreaker {
     let advice: string;
     if (this.streak === 1) {
       this.state = 'FAILURE_STAGE_1';
-      advice = `\n[ATTENTION GUARD - FAILURE_STAGE_1]: Test failure detected. Speculative in-place edits are discouraged. Author an isolated test reproducer (test_*, *_test.*) or diagnostic doc (diagnosis.md, rca.md) before fixing code.\n`;
+      advice = `\n[ATTENTION GUARD - ATTEMPT 1]: Test failure detected. Speculative in-place edits are discouraged. Author an isolated test reproducer (test_*, *_test.*) or diagnostic doc (diagnosis.md, rca.md) before fixing code.\n`;
     } else {
       this.state = 'FAILURE_STAGE_2_TRIPPED';
-      advice = `\n[ATTENTION GUARD - FAILURE_STAGE_2_TRIPPED]: Consecutive test failures (Streak: ${this.streak}). Circuit breaker tripped: stop speculative trial-and-error edits immediately. Isolate root cause in diagnosis.md or inspect offloaded diagnostics.\n`;
+      advice = `\n[ATTENTION GUARD - ATTEMPT ${this.streak}]: Consecutive test failures (Streak: ${this.streak}). Circuit breaker tripped: stop speculative trial-and-error edits immediately. Isolate root cause in diagnosis.md or rca.md.\n`;
     }
 
     return { state: this.state, streak: this.streak, advice };

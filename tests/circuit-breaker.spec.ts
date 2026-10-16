@@ -58,7 +58,7 @@ describe('AttentionGuardCircuitBreaker', () => {
       expect(cb.state).toBe('FAILURE_STAGE_1');
       expect(outcome.state).toBe('FAILURE_STAGE_1');
       expect(outcome.streak).toBe(1);
-      expect(outcome.advice).toContain('[ATTENTION GUARD - FAILURE_STAGE_1]');
+      expect(outcome.advice).toContain('[ATTENTION GUARD - ATTEMPT 1]');
       expect(outcome.advice).toContain('Speculative in-place edits are discouraged');
     });
 
@@ -70,7 +70,7 @@ describe('AttentionGuardCircuitBreaker', () => {
       expect(cb.state).toBe('FAILURE_STAGE_2_TRIPPED');
       expect(outcome.state).toBe('FAILURE_STAGE_2_TRIPPED');
       expect(outcome.streak).toBe(2);
-      expect(outcome.advice).toContain('[ATTENTION GUARD - FAILURE_STAGE_2_TRIPPED]');
+      expect(outcome.advice).toContain('[ATTENTION GUARD - ATTEMPT 2]');
       expect(outcome.advice).toContain('Consecutive test failures (Streak: 2)');
     });
 
