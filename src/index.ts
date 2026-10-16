@@ -3,7 +3,6 @@ import type { ShellExecRequest, ShellExecSpec } from '@deepseek-ai/dsh-shell';
 import { Config } from './schema.js';
 import { checkRtkAvailable, rewriteCommand } from './rtk.js';
 import { AttentionGuardCircuitBreaker } from './circuit-breaker.js';
-import { offloadOutputIfLarge } from './offload.js';
 import { pushMetricAsync } from './metrics.js';
 
 export const name = 'dsh-plugin-attention-guard';
@@ -13,7 +12,6 @@ export type { Config as ConfigType } from './schema.js';
 
 export * from './schema.js';
 export * from './rtk.js';
-export * from './offload.js';
 export * from './circuit-breaker.js';
 export * from './metrics.js';
 
@@ -62,28 +60,6 @@ export function apply(ctx: Context, config: Config): void {
             }
           }
 
-          if (config.enableOutputOffload) {
-            const maxChars = config.maxOutputChars || 2000;
-            if (res.stdout && typeof res.stdout.text === 'string' && res.stdout.text.length > maxChars) {
-              const offload = offloadOutputIfLarge(
-                spec.command,
-                res.stdout.text,
-                maxChars,
-                config.diagnosticsDir
-              );
-              res.stdout.text = offload.text;
-            }
-            if (res.stderr && typeof res.stderr.text === 'string' && res.stderr.text.length > maxChars) {
-              const offload = offloadOutputIfLarge(
-                spec.command,
-                res.stderr.text,
-                maxChars,
-                config.diagnosticsDir
-              );
-              res.stderr.text = offload.text;
-            }
-          }
-
           if (advice && res.stderr) {
             res.stderr.text = (res.stderr.text || '') + advice;
           }
@@ -98,32 +74,6 @@ export function apply(ctx: Context, config: Config): void {
           }
 
           return res;
-        };
-      }
-
-      // Intercept readOutput
-      if (typeof proc.readOutput === 'function') {
-        const originalReadOutput = proc.readOutput.bind(proc);
-        proc.readOutput = function () {
-          const chunk = originalReadOutput();
-          if (
-            config.enableOutputOffload &&
-            chunk.delta &&
-            chunk.delta.length > (config.maxOutputChars || 2000)
-          ) {
-            const offload = offloadOutputIfLarge(
-              spec.command,
-              chunk.delta,
-              config.maxOutputChars || 2000,
-              config.diagnosticsDir
-            );
-            chunk.delta = offload.text;
-            chunk.lossy = true;
-            if (offload.logPath) {
-              chunk.stdoutSpillPath = offload.logPath;
-            }
-          }
-          return chunk;
         };
       }
 

@@ -6,8 +6,5 @@
         model: 'deepseek-flash'
         rtkBinary: 'rtk'
         excludeCommands: []
-        maxOutputChars: 2000
-        enableOutputOffload: true
-        diagnosticsDir: ''
         enableCircuitBreaker: true
         enableMetrics: true

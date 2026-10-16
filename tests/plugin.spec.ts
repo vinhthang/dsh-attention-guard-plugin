@@ -62,9 +62,6 @@ describe('dsh-plugin-attention-guard plugin', () => {
       model: 'deepseek-flash',
       rtkBinary: 'rtk',
       excludeCommands: [],
-      maxOutputChars: 2000,
-      enableOutputOffload: true,
-      diagnosticsDir: '',
       enableCircuitBreaker: true,
       enableMetrics: true,
     };
@@ -86,9 +83,6 @@ describe('dsh-plugin-attention-guard plugin', () => {
       model: 'deepseek-flash',
       rtkBinary: 'rtk',
       excludeCommands: [],
-      maxOutputChars: 2000,
-      enableOutputOffload: true,
-      diagnosticsDir: '',
       enableCircuitBreaker: true,
       enableMetrics: true,
     };
@@ -112,9 +106,6 @@ describe('dsh-plugin-attention-guard plugin', () => {
       model: 'deepseek-flash',
       rtkBinary: 'rtk',
       excludeCommands: [],
-      maxOutputChars: 2000,
-      enableOutputOffload: true,
-      diagnosticsDir: '',
       enableCircuitBreaker: true,
       enableMetrics: true,
     };
@@ -125,7 +116,7 @@ describe('dsh-plugin-attention-guard plugin', () => {
   });
 
   describe('ctx.shell.execute interception', () => {
-    it('wraps proc.result and offloads large stdout when enableOutputOffload is true', async () => {
+    it('wraps proc.result and passes large stdout through without truncation', async () => {
       vi.spyOn(rtkModule, 'checkRtkAvailable').mockReturnValue(true);
       const pushMetricSpy = vi.spyOn(metricsModule, 'pushMetricAsync').mockImplementation(() => {});
 
@@ -149,9 +140,6 @@ describe('dsh-plugin-attention-guard plugin', () => {
         model: 'deepseek-flash',
         rtkBinary: 'rtk',
         excludeCommands: [],
-        maxOutputChars: 2000,
-        enableOutputOffload: true,
-        diagnosticsDir: '',
         enableCircuitBreaker: true,
         enableMetrics: true,
       };
@@ -169,8 +157,8 @@ describe('dsh-plugin-attention-guard plugin', () => {
       const proc = await (ctx.shell as any).execute(spec);
       const res = await proc.result();
 
-      expect(res.stdout.text).toContain('[Attention Guard: Output (2500 chars) offloaded to ');
-      expect(res.stdout.text).toContain('... [output offloaded, see ');
+      expect(res.stdout.text).toBe(largeStdout);
+      expect(res.stdout.text.length).toBe(2500);
       expect(pushMetricSpy).toHaveBeenCalledWith('SHELL_EXEC_RESULT', expect.objectContaining({
         command: 'cargo test',
         exitCode: 0,
@@ -200,9 +188,6 @@ describe('dsh-plugin-attention-guard plugin', () => {
         model: 'deepseek-flash',
         rtkBinary: 'rtk',
         excludeCommands: [],
-        maxOutputChars: 2000,
-        enableOutputOffload: true,
-        diagnosticsDir: '',
         enableCircuitBreaker: true,
         enableMetrics: false,
       };
@@ -222,57 +207,6 @@ describe('dsh-plugin-attention-guard plugin', () => {
 
       expect(res.stderr.text).toContain('assertion failed');
       expect(res.stderr.text).toContain('[ATTENTION GUARD - FAILURE_STAGE_1]');
-    });
-
-    it('wraps proc.readOutput and offloads large chunks', async () => {
-      vi.spyOn(rtkModule, 'checkRtkAvailable').mockReturnValue(true);
-
-      const largeChunk = 'Y'.repeat(3000);
-      mockOriginalExecute = vi.fn(async () => ({
-        result: vi.fn(async () => ({
-          exitCode: 0,
-          signal: null,
-          timedOut: false,
-          aborted: false,
-          timeoutMs: 30000,
-          stdout: { text: '', bytes: 0, lossy: false },
-          stderr: { text: '', bytes: 0, lossy: false },
-        })),
-        readOutput: vi.fn(() => ({
-          delta: largeChunk,
-          lossy: false,
-        })),
-      }));
-      (ctx.shell as any).execute = mockOriginalExecute;
-
-      const config = {
-        enabled: true,
-        model: 'deepseek-flash',
-        rtkBinary: 'rtk',
-        excludeCommands: [],
-        maxOutputChars: 2000,
-        enableOutputOffload: true,
-        diagnosticsDir: '',
-        enableCircuitBreaker: false,
-        enableMetrics: false,
-      };
-
-      apply(ctx, config);
-
-      const spec: ShellExecSpec = {
-        command: 'pnpm test',
-        workdir: '/workspace',
-        timeoutMs: 30000,
-        stdoutMaxBytes: 1024 * 1024,
-        sandboxPolicy: undefined,
-      };
-
-      const proc = await (ctx.shell as any).execute(spec);
-      const chunk = proc.readOutput();
-
-      expect(chunk.lossy).toBe(true);
-      expect(chunk.stdoutSpillPath).toBeDefined();
-      expect(chunk.delta).toContain('[Attention Guard: Output (3000 chars) offloaded to ');
     });
   });
 });
