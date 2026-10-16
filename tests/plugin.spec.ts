@@ -3,10 +3,12 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { ShellExecRequest, ShellExecSpec } from '@deepseek-ai/dsh-shell';
 import { apply, name, inject, Config } from '../src/index.js';
 import * as rtkModule from '../src/rtk.js';
+import * as metricsModule from '../src/metrics.js';
 
 describe('dsh-plugin-attention-guard plugin', () => {
   let ctx: Context;
   let mockOriginalResolve: (req: ShellExecRequest) => ShellExecSpec;
+  let mockOriginalExecute: (spec: ShellExecSpec) => Promise<any>;
 
   beforeEach(() => {
     mockOriginalResolve = vi.fn((req: ShellExecRequest): ShellExecSpec => ({
@@ -17,9 +19,26 @@ describe('dsh-plugin-attention-guard plugin', () => {
       sandboxPolicy: undefined,
     }));
 
+    mockOriginalExecute = vi.fn(async (spec: ShellExecSpec) => ({
+      result: vi.fn(async () => ({
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        aborted: false,
+        timeoutMs: 30000,
+        stdout: { text: 'short output', bytes: 12, lossy: false },
+        stderr: { text: '', bytes: 0, lossy: false },
+      })),
+      readOutput: vi.fn(() => ({
+        delta: 'short delta',
+        lossy: false,
+      })),
+    }));
+
     ctx = {
       shell: {
         resolve: mockOriginalResolve,
+        execute: mockOriginalExecute,
       },
       logger: vi.fn(() => ({
         warn: vi.fn(),
@@ -43,6 +62,11 @@ describe('dsh-plugin-attention-guard plugin', () => {
       model: 'deepseek-flash',
       rtkBinary: 'rtk',
       excludeCommands: [],
+      maxOutputChars: 2000,
+      enableOutputOffload: true,
+      diagnosticsDir: '',
+      enableCircuitBreaker: true,
+      enableMetrics: true,
     };
 
     apply(ctx, config);
@@ -62,6 +86,11 @@ describe('dsh-plugin-attention-guard plugin', () => {
       model: 'deepseek-flash',
       rtkBinary: 'rtk',
       excludeCommands: [],
+      maxOutputChars: 2000,
+      enableOutputOffload: true,
+      diagnosticsDir: '',
+      enableCircuitBreaker: true,
+      enableMetrics: true,
     };
 
     apply(ctx, config);
@@ -83,10 +112,167 @@ describe('dsh-plugin-attention-guard plugin', () => {
       model: 'deepseek-flash',
       rtkBinary: 'rtk',
       excludeCommands: [],
+      maxOutputChars: 2000,
+      enableOutputOffload: true,
+      diagnosticsDir: '',
+      enableCircuitBreaker: true,
+      enableMetrics: true,
     };
 
     apply(ctx, config);
 
     expect(ctx.shell.resolve).toBe(initialResolve);
+  });
+
+  describe('ctx.shell.execute interception', () => {
+    it('wraps proc.result and offloads large stdout when enableOutputOffload is true', async () => {
+      vi.spyOn(rtkModule, 'checkRtkAvailable').mockReturnValue(true);
+      const pushMetricSpy = vi.spyOn(metricsModule, 'pushMetricAsync').mockImplementation(() => {});
+
+      const largeStdout = 'X'.repeat(2500);
+      mockOriginalExecute = vi.fn(async () => ({
+        result: vi.fn(async () => ({
+          exitCode: 0,
+          signal: null,
+          timedOut: false,
+          aborted: false,
+          timeoutMs: 30000,
+          stdout: { text: largeStdout, bytes: 2500, lossy: false },
+          stderr: { text: '', bytes: 0, lossy: false },
+        })),
+        readOutput: vi.fn(() => ({ delta: '', lossy: false })),
+      }));
+      (ctx.shell as any).execute = mockOriginalExecute;
+
+      const config = {
+        enabled: true,
+        model: 'deepseek-flash',
+        rtkBinary: 'rtk',
+        excludeCommands: [],
+        maxOutputChars: 2000,
+        enableOutputOffload: true,
+        diagnosticsDir: '',
+        enableCircuitBreaker: true,
+        enableMetrics: true,
+      };
+
+      apply(ctx, config);
+
+      const spec: ShellExecSpec = {
+        command: 'cargo test',
+        workdir: '/workspace',
+        timeoutMs: 30000,
+        stdoutMaxBytes: 1024 * 1024,
+        sandboxPolicy: undefined,
+      };
+
+      const proc = await (ctx.shell as any).execute(spec);
+      const res = await proc.result();
+
+      expect(res.stdout.text).toContain('[Attention Guard: Output (2500 chars) offloaded to ');
+      expect(res.stdout.text).toContain('... [output offloaded, see ');
+      expect(pushMetricSpy).toHaveBeenCalledWith('SHELL_EXEC_RESULT', expect.objectContaining({
+        command: 'cargo test',
+        exitCode: 0,
+        state: 'RECOVERY_VERIFIED',
+      }));
+    });
+
+    it('injects circuit breaker advice into stderr upon test failure', async () => {
+      vi.spyOn(rtkModule, 'checkRtkAvailable').mockReturnValue(true);
+
+      mockOriginalExecute = vi.fn(async () => ({
+        result: vi.fn(async () => ({
+          exitCode: 1,
+          signal: null,
+          timedOut: false,
+          aborted: false,
+          timeoutMs: 30000,
+          stdout: { text: 'error output', bytes: 12, lossy: false },
+          stderr: { text: 'assertion failed\n', bytes: 17, lossy: false },
+        })),
+        readOutput: vi.fn(() => ({ delta: '', lossy: false })),
+      }));
+      (ctx.shell as any).execute = mockOriginalExecute;
+
+      const config = {
+        enabled: true,
+        model: 'deepseek-flash',
+        rtkBinary: 'rtk',
+        excludeCommands: [],
+        maxOutputChars: 2000,
+        enableOutputOffload: true,
+        diagnosticsDir: '',
+        enableCircuitBreaker: true,
+        enableMetrics: false,
+      };
+
+      apply(ctx, config);
+
+      const spec: ShellExecSpec = {
+        command: 'pytest tests/',
+        workdir: '/workspace',
+        timeoutMs: 30000,
+        stdoutMaxBytes: 1024 * 1024,
+        sandboxPolicy: undefined,
+      };
+
+      const proc = await (ctx.shell as any).execute(spec);
+      const res = await proc.result();
+
+      expect(res.stderr.text).toContain('assertion failed');
+      expect(res.stderr.text).toContain('[ATTENTION GUARD - FAILURE_STAGE_1]');
+    });
+
+    it('wraps proc.readOutput and offloads large chunks', async () => {
+      vi.spyOn(rtkModule, 'checkRtkAvailable').mockReturnValue(true);
+
+      const largeChunk = 'Y'.repeat(3000);
+      mockOriginalExecute = vi.fn(async () => ({
+        result: vi.fn(async () => ({
+          exitCode: 0,
+          signal: null,
+          timedOut: false,
+          aborted: false,
+          timeoutMs: 30000,
+          stdout: { text: '', bytes: 0, lossy: false },
+          stderr: { text: '', bytes: 0, lossy: false },
+        })),
+        readOutput: vi.fn(() => ({
+          delta: largeChunk,
+          lossy: false,
+        })),
+      }));
+      (ctx.shell as any).execute = mockOriginalExecute;
+
+      const config = {
+        enabled: true,
+        model: 'deepseek-flash',
+        rtkBinary: 'rtk',
+        excludeCommands: [],
+        maxOutputChars: 2000,
+        enableOutputOffload: true,
+        diagnosticsDir: '',
+        enableCircuitBreaker: false,
+        enableMetrics: false,
+      };
+
+      apply(ctx, config);
+
+      const spec: ShellExecSpec = {
+        command: 'pnpm test',
+        workdir: '/workspace',
+        timeoutMs: 30000,
+        stdoutMaxBytes: 1024 * 1024,
+        sandboxPolicy: undefined,
+      };
+
+      const proc = await (ctx.shell as any).execute(spec);
+      const chunk = proc.readOutput();
+
+      expect(chunk.lossy).toBe(true);
+      expect(chunk.stdoutSpillPath).toBeDefined();
+      expect(chunk.delta).toContain('[Attention Guard: Output (3000 chars) offloaded to ');
+    });
   });
 });

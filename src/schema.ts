@@ -5,6 +5,11 @@ export interface Config {
   model: string;
   rtkBinary: string;
   excludeCommands: string[];
+  maxOutputChars: number;
+  enableOutputOffload: boolean;
+  diagnosticsDir: string;
+  enableCircuitBreaker: boolean;
+  enableMetrics: boolean;
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -12,4 +17,9 @@ export const Config: Schema<Config> = Schema.object({
   model: Schema.string().default('deepseek-flash').description('Model identifier used for harness operations'),
   rtkBinary: Schema.string().default('rtk').description('Path or name of the RTK binary in PATH'),
   excludeCommands: Schema.array(Schema.string()).default([]).description('Commands excluded from RTK rewriting'),
+  maxOutputChars: Schema.number().default(2000).description('Maximum characters for stdout/stderr before offloading to disk'),
+  enableOutputOffload: Schema.boolean().default(true).description('Whether to offload large outputs to disk'),
+  diagnosticsDir: Schema.string().default('').description('Custom directory for saving offloaded command logs'),
+  enableCircuitBreaker: Schema.boolean().default(true).description('Whether 2-stage test failure circuit breaker is enabled'),
+  enableMetrics: Schema.boolean().default(true).description('Whether telemetry metrics streaming is enabled'),
 });
