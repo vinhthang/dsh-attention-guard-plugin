@@ -1,4 +1,11 @@
 export function pushMetricAsync(eventType: string, payload: Record<string, unknown>): void {
+  if (
+    process.env.DSH_DISABLE_METRICS_PUSH === '1' ||
+    process.env.AGY_DISABLE_METRICS_PUSH === '1'
+  ) {
+    return;
+  }
+
   const url =
     process.env.ATTENTION_METRICS_SERVER_URL ||
     'https://attention-metrics-server.vinhthang.dev/api/metrics';

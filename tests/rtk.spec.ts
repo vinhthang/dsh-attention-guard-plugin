@@ -1,9 +1,12 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   tokenizeCommand,
   isInteractiveOrStreaming,
   checkRtkAvailable,
   rewriteCommand,
+  clearRtkCache,
+  _rtkAvailableCache,
+  _rewriteCache,
 } from '../src/rtk.js';
 
 describe('rtk module', () => {
@@ -134,6 +137,42 @@ describe('rtk module', () => {
         excludeCommands: [],
       };
       expect(rewriteCommand('cargo test', config)).toBe('cargo test');
+    });
+  });
+
+  describe('caching and memoization', () => {
+    it('memoizes checkRtkAvailable and rewriteCommand results in memory and clearRtkCache resets cache', () => {
+      clearRtkCache();
+      expect(_rtkAvailableCache.size).toBe(0);
+      expect(_rewriteCache.size).toBe(0);
+
+      // checkRtkAvailable caches result
+      expect(checkRtkAvailable('rtk')).toBe(true);
+      expect(_rtkAvailableCache.has('rtk')).toBe(true);
+      expect(_rtkAvailableCache.get('rtk')).toBe(true);
+
+      // Mutate cache to prove memoized value is returned
+      _rtkAvailableCache.set('rtk', false);
+      expect(checkRtkAvailable('rtk')).toBe(false);
+
+      // rewriteCommand caches result
+      const rewritten1 = rewriteCommand('cargo test');
+      expect(rewritten1).toBe('rtk cargo test');
+      expect(_rewriteCache.has('rtk:cargo test')).toBe(true);
+      expect(_rewriteCache.get('rtk:cargo test')).toBe('rtk cargo test');
+
+      // Mutate cache to prove memoized value is returned
+      _rewriteCache.set('rtk:cargo test', 'cached-cargo-test');
+      expect(rewriteCommand('cargo test')).toBe('cached-cargo-test');
+
+      // clearRtkCache resets both caches
+      clearRtkCache();
+      expect(_rtkAvailableCache.size).toBe(0);
+      expect(_rewriteCache.size).toBe(0);
+
+      // Subsequent calls re-evaluate
+      expect(checkRtkAvailable('rtk')).toBe(true);
+      expect(rewriteCommand('cargo test')).toBe('rtk cargo test');
     });
   });
 });

@@ -29,6 +29,18 @@ const INTERACTIVE_BINARIES = new Set([
   'ssh',
 ]);
 
+const MAX_CACHE_SIZE = 512;
+export const _rtkAvailableCache = new Map<string, boolean>();
+export const _rewriteCache = new Map<string, string>();
+
+/**
+ * Clears the in-memory caches for RTK availability and command rewriting.
+ */
+export function clearRtkCache(): void {
+  _rtkAvailableCache.clear();
+  _rewriteCache.clear();
+}
+
 /**
  * Tokenizes a shell command string into an array of argument tokens,
  * correctly handling single/double quotes and whitespace.
@@ -113,13 +125,27 @@ export function isInteractiveOrStreaming(command: string | string[]): boolean {
  * Checks whether the rtk binary is available in PATH via `which`.
  */
 export function checkRtkAvailable(rtkBinary: string = 'rtk'): boolean {
+  if (_rtkAvailableCache.has(rtkBinary)) {
+    return _rtkAvailableCache.get(rtkBinary)!;
+  }
+
   try {
     const result = spawnSync('which', [rtkBinary], {
       encoding: 'utf-8',
       stdio: 'pipe',
       timeout: 1500,
     });
-    return result.status === 0;
+    const available = result.status === 0;
+
+    if (_rtkAvailableCache.size >= MAX_CACHE_SIZE) {
+      const firstKey = _rtkAvailableCache.keys().next().value;
+      if (firstKey !== undefined) {
+        _rtkAvailableCache.delete(firstKey);
+      }
+    }
+    _rtkAvailableCache.set(rtkBinary, available);
+
+    return available;
   } catch {
     return false;
   }
@@ -154,6 +180,10 @@ export function rewriteCommand(command: string, config?: Partial<Config>): strin
   }
 
   const rtkBinary = config?.rtkBinary || 'rtk';
+  const cacheKey = `${rtkBinary}:${command.trim()}`;
+  if (_rewriteCache.has(cacheKey)) {
+    return _rewriteCache.get(cacheKey)!;
+  }
 
   try {
     const result = spawnSync(rtkBinary, ['rewrite', command], {
@@ -162,11 +192,20 @@ export function rewriteCommand(command: string, config?: Partial<Config>): strin
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
+    let rewritten = command;
     if (result.status === 3 && result.stdout && result.stdout.trim().length > 0) {
-      return result.stdout.trim();
+      rewritten = result.stdout.trim();
     }
 
-    return command;
+    if (_rewriteCache.size >= MAX_CACHE_SIZE) {
+      const firstKey = _rewriteCache.keys().next().value;
+      if (firstKey !== undefined) {
+        _rewriteCache.delete(firstKey);
+      }
+    }
+    _rewriteCache.set(cacheKey, rewritten);
+
+    return rewritten;
   } catch {
     return command;
   }

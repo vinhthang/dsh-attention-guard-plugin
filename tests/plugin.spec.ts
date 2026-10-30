@@ -96,6 +96,45 @@ describe('dsh-plugin-attention-guard plugin', () => {
     );
   });
 
+  it('throws error in ctx.shell.resolve on destructive command git reset --hard', () => {
+    vi.spyOn(rtkModule, 'checkRtkAvailable').mockReturnValue(true);
+
+    const config = {
+      enabled: true,
+      model: 'deepseek-flash',
+      rtkBinary: 'rtk',
+      excludeCommands: [],
+      enableCircuitBreaker: true,
+      enableMetrics: true,
+    };
+
+    apply(ctx, config);
+
+    expect(() => {
+      ctx.shell.resolve({ command: 'git reset --hard' });
+    }).toThrow(/Sweeping destructive command/);
+  });
+
+  it('throws error in ctx.shell.resolve on test tampering command', () => {
+    vi.spyOn(rtkModule, 'checkRtkAvailable').mockReturnValue(true);
+
+    const config = {
+      enabled: true,
+      model: 'deepseek-flash',
+      rtkBinary: 'rtk',
+      excludeCommands: [],
+      enableCircuitBreaker: true,
+      enableMetrics: true,
+    };
+
+    apply(ctx, config);
+
+    const skipMarker = ['@pytest', 'mark', 'skip'].join('.');
+    expect(() => {
+      ctx.shell.resolve({ command: `echo "${skipMarker}" >> tests/test_foo.py` });
+    }).toThrow(/Test tampering detected/);
+  });
+
   it('leaves ctx.shell.resolve untouched when rtk is not available', () => {
     vi.spyOn(rtkModule, 'checkRtkAvailable').mockReturnValue(false);
 
