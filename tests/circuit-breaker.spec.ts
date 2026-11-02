@@ -119,6 +119,21 @@ describe('AttentionGuardCircuitBreaker', () => {
           'python3 -c "lines = open(\'/tmp/run.log\').readlines()[-25:]"'
         )
       ).toBe('POLL_FILE:/tmp/run.log');
+      expect(
+        normalizeCommandSignature(
+          'rtk python3 -c "Path(\'/tmp/run.log\').read_text().splitlines()[-10:]"'
+        )
+      ).toBe('POLL_FILE:/tmp/run.log');
+    });
+
+    it('does not collapse analytical python3 -c scripts to POLL_FILE (REQ-030)', () => {
+      const analytical1 = 'rtk python3 -c "from pathlib import Path; import json; p = Path(\'/Users/thanghoang/github/books/runs/trang_tu\'); data = [json.loads(line) for line in open(p / \'meta.json\').readlines()]; print(len(data))"';
+      const analytical2 = 'rtk python3 -c "import re; lines = open(\'/Users/thanghoang/github/books/runs/trang_tu/notes.txt\').readlines(); for line in lines: if re.search(r\'^#\', line): print(line)"';
+      const analytical3 = 'rtk python3 -c "import xml.etree.ElementTree as ET; tree = ET.parse(\'/Users/thanghoang/github/books/runs/trang_tu/content.opf\'); root = tree.getroot(); for child in root: print(child.tag)"';
+
+      expect(normalizeCommandSignature(analytical1)).not.toMatch(/^POLL_FILE:/);
+      expect(normalizeCommandSignature(analytical2)).not.toMatch(/^POLL_FILE:/);
+      expect(normalizeCommandSignature(analytical3)).not.toMatch(/^POLL_FILE:/);
     });
 
     it('normalizes process-polling variations targeting the same PID or target to POLL_PROC:<target>', () => {
@@ -165,6 +180,29 @@ describe('AttentionGuardCircuitBreaker', () => {
       expect(err).toContain("Attention Guard: Subagent doom-loop circuit breaker.");
       expect(err).toContain("Command 'ps -p 59170 -o pid,comm' executed 3 times consecutively without intervening file edits.");
       expect(err).toContain("Do not poll processes or logs in a shell loop; return your current status or await async completion.");
+    });
+
+    it('allows 3 consecutive distinct analytical python3 -c scripts reading the same file (REQ-030)', () => {
+      const swiftFile = 'Sources/OpenKey/macOS-Swift/Sources/OpenKeySwiftCore/VietnameseDictionary.swift';
+      const script1 = `rtk python3 -c "import re; lines = open('${swiftFile}').readlines(); matches = [l for l in lines if 'func' in l]; print(len(matches))"`;
+      const script2 = `rtk python3 -c "for i, line in enumerate(open('${swiftFile}').readlines()): if 'class' in line: print(i, line)"`;
+      const script3 = `rtk python3 -c "import json; content = open('${swiftFile}').read(); print(json.dumps({\\"len\\": len(content)}))"`;
+
+      expect(normalizeCommandSignature(script1)).not.toMatch(/^POLL_FILE:/);
+      expect(normalizeCommandSignature(script2)).not.toMatch(/^POLL_FILE:/);
+      expect(normalizeCommandSignature(script3)).not.toMatch(/^POLL_FILE:/);
+
+      expect(cb.checkDoomLoop(script1, 3)).toBeNull();
+      expect(cb.checkDoomLoop(script2, 3)).toBeNull();
+      expect(cb.checkDoomLoop(script3, 3)).toBeNull();
+
+      // But 3 identical executions of the same script trigger the doom loop
+      const cbRepeat = new AttentionGuardCircuitBreaker();
+      expect(cbRepeat.checkDoomLoop(script1, 3)).toBeNull();
+      expect(cbRepeat.checkDoomLoop(script1, 3)).toBeNull();
+      const err = cbRepeat.checkDoomLoop(script1, 3);
+      expect(err).not.toBeNull();
+      expect(err).toContain("Attention Guard: Subagent doom-loop circuit breaker.");
     });
 
     it('resets doom loop count when cb.recordFileEdit() is called', () => {

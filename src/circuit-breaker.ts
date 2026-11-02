@@ -67,14 +67,16 @@ export function normalizeCommandSignature(cmd: string): string {
     }
   }
 
-  // Check python/python3 -c reading file
-  if (/^python[3]?\b/.test(s) && s.includes('-c')) {
-    const openMatch = s.match(/(?:open|Path)\s*\(\s*['"]([^'"]+)['"]/);
-    if (openMatch) {
-      const filePath = openMatch[1];
-      const isRead = /readlines|read_text|read\s*\(|\.lines\b/.test(s);
-      const isWrite = /['"][wa]\+?['"]|write_text|write\s*\(/.test(s);
-      if (isRead && !isWrite) {
+  // Check python/python3 -c reading/tailing a file directly without analytical logic (REQ-030, ADR-001)
+  if (/\bpython[0-9.]*\s+-c\b/.test(s)) {
+    const isWrite = /['"][wa]\+?['"]|write_text|write_bytes/.test(s);
+    const hasAnalysis = /\b(?:import\s+(?:re|json|xml|ast|difflib|csv|sqlite3|collections)|re\.|json\.|difflib\.|ET\.|def\s+\w+|for\s+[\w,\s()]+\s+in\b)/.test(s);
+    if (!isWrite && !hasAnalysis) {
+      const directOpenMatch = s.match(
+        /(?:open|Path)\s*\(\s*['"]([^'"]+)['"][^)]*\)\s*\.\s*(?:readlines|read_text|read|readline)\b/
+      );
+      if (directOpenMatch) {
+        const filePath = directOpenMatch[1].trim();
         return `POLL_FILE:${filePath}`;
       }
     }
